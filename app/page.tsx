@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
 import { Card, Empty, ProspectLink, Stat, StatusBadge, TriggerBadge, fmtDate } from "@/components/ui";
+import AutoRefresh from "@/components/AutoRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -18,16 +19,46 @@ export default async function Today() {
   const rows = counts.data ?? [];
   const by = (s: string) => rows.filter((r) => r.status === s).length;
 
+  const run = lastRun.data;
+  const running =
+    run?.status === "running" &&
+    Date.now() - new Date(run.updated_at).getTime() < 20 * 60 * 1000;
+
   return (
     <div className="space-y-6">
+      {running ? <AutoRefresh seconds={10} /> : null}
+
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Today</h1>
         <p className="mt-0.5 text-sm text-stone-500">
-          {lastRun.data
-            ? `Agent last ran ${fmtDate(lastRun.data.ran_at)} — ${lastRun.data.prospects_added} prospects, ${lastRun.data.drafts_written} drafts${lastRun.data.area_worked ? ` · ${lastRun.data.area_worked}` : ""}`
-            : "The agent has not run yet."}
+          {running
+            ? "The agent is working right now."
+            : run
+              ? `Agent last ran ${fmtDate(run.ran_at)} — ${run.prospects_added} prospects, ${run.drafts_written} drafts${run.area_worked ? ` · ${run.area_worked}` : ""}`
+              : "The agent has not run yet."}
         </p>
       </div>
+
+      {running && run ? (
+        <Link
+          href="/runs"
+          className="block rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 hover:bg-blue-100"
+        >
+          <div className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-600" />
+            <span className="font-medium">{run.step ?? "Starting"}</span>
+            <span className="ml-auto tabular-nums text-xs text-blue-700">
+              step {run.steps_done} of {run.steps_total} · details →
+            </span>
+          </div>
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-blue-100">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all duration-700"
+              style={{ width: `${Math.max(3, Math.round((run.steps_done / Math.max(1, run.steps_total)) * 100))}%` }}
+            />
+          </div>
+        </Link>
+      ) : null}
 
       {lastRun.data?.needs_decision ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
