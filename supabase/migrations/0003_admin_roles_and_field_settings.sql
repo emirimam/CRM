@@ -167,13 +167,21 @@ on conflict (key) do nothing;
 create or replace function guard_dnc() returns trigger
   language plpgsql security definer set search_path = public as $$
 begin
+  -- Changes made BY another trigger are the system's own, not a person's.
+  -- on_draft_sent sets do_not_contact when the fourth touch is logged, and
+  -- that must keep working for a sales account marking a draft sent.
+  if pg_trigger_depth() > 1 then
+    return new;
+  end if;
+
   -- auth.uid() is null for the agent's service-role connection, which must
-  -- keep working: the four-touch rule sets do_not_contact automatically.
+  -- keep working too.
   if auth.uid() is not null
      and new.do_not_contact is distinct from old.do_not_contact
      and not is_admin() then
     raise exception 'Only an admin can change do-not-contact';
   end if;
+
   return new;
 end $$;
 
