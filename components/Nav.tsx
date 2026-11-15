@@ -1,4 +1,5 @@
 import { supabaseServer } from "@/lib/supabase/server";
+import { canAdmin, getViewer, roleLabel } from "@/lib/perms";
 import { signOut } from "@/app/actions";
 import NavLinks from "@/components/NavLinks";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -18,6 +19,8 @@ export default async function Nav() {
     .select("id", { count: "exact", head: true })
     .in("status", ["pending", "approved"]);
 
+  const viewer = await getViewer();
+
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/85 backdrop-blur-md supports-[backdrop-filter]:bg-canvas/70">
       <div className="mx-auto flex max-w-[86rem] items-center gap-3 px-4 py-2.5 sm:px-6">
@@ -33,9 +36,14 @@ export default async function Nav() {
           </span>
         </span>
 
-        <NavLinks draftCount={draftCount ?? 0} />
+        <NavLinks draftCount={draftCount ?? 0} isAdmin={canAdmin(viewer)} />
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {viewer.rolesReady && viewer.role !== "admin" ? (
+            <span className="hidden rounded-md bg-surface-2 px-1.5 py-0.5 text-2xs font-semibold text-muted ring-1 ring-inset ring-line sm:block">
+              {roleLabel[viewer.role]}
+            </span>
+          ) : null}
           <ThemeToggle />
           <form action={signOut}>
             <button

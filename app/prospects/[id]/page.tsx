@@ -2,25 +2,22 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
 import { addTouch, markDoNotContact } from "@/app/actions";
+import { canAdmin, canWrite, getViewer } from "@/lib/perms";
+import { getSettings, optionLabel, optionTone, selectable } from "@/lib/settings";
 import InlineField from "@/components/InlineField";
 import {
+  Badge,
   Callout,
   Card,
   Empty,
   Pill,
   SourceLink,
-  StatusBadge,
-  TriggerBadge,
   btn,
   fmtDate,
   input,
 } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
-
-const statusOptions = [
-  "new", "researched", "drafted", "contacted", "replied", "qualified", "won", "lost",
-].map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }));
 
 const touchKindLabel: Record<string, string> = {
   email_out: "Email out",
@@ -43,6 +40,8 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
   const { id } = await params;
   const supabase = await supabaseServer();
 
+  const [viewer, settings] = await Promise.all([getViewer(), getSettings()]);
+
   const [{ data: p }, { data: touches }, { data: drafts }] = await Promise.all([
     supabase
       .from("prospects")
@@ -59,7 +58,11 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
     | { carrier: string; name: string; state: string; discontinue_date: string | null; source_url: string }
     | null;
 
-  const editable = !p.do_not_contact;
+  const editable = !p.do_not_contact && canWrite(viewer);
+  const statusOptions = selectable(settings.status)
+    .filter((o) => o.value !== "dnc")
+    .map((o) => ({ value: o.value, label: o.label }));
+  const custom = (p.custom ?? {}) as Record<string, unknown>;
 
   return (
     <>
@@ -85,9 +88,15 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
               />
             </span>
           ) : (
-            <StatusBadge status={p.status} />
+            <Badge
+              label={optionLabel(settings.status, p.status)}
+              tone={optionTone(settings.status, p.status)}
+            />
           )}
-          <TriggerBadge trigger={p.trigger} />
+          <Badge
+            label={optionLabel(settings.trigger, p.trigger)}
+            tone={optionTone(settings.trigger, p.trigger)}
+          />
           <div className="ml-auto">
             <Pill tone={p.touch_count >= 4 ? "danger" : "neutral"}>
               {p.touch_count} of 4 touches used
@@ -321,6 +330,58 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
             </dl>
           </Card>
 
+          {settings.customFields.length ? (
+            <Card title="Your own fields">
+              <dl className="divide-y divide-line/60">
+                {settings.customFields.map((f) => (
+                  <Row key={f.key} label={f.label}>
+                    {editable ? (
+                      <InlineField
+                        prospectId={p.id}
+                        field={`custom.${f.key}`}
+                        value={
+                          custom[f.key] === undefined || custom[f.key] === null
+                            ? ""
+                            : String(custom[f.key])
+                        }
+                        kind={
+                          f.type === "select"
+                            ? "select"
+                            : f.type === "boolean"
+                              ? "select"
+                              : f.type === "number"
+                                ? "number"
+                                : f.type === "date"
+                                  ? "date"
+                                  : f.type === "url"
+                                    ? "url"
+                                    : "text"
+                        }
+                        options={
+                          f.type === "select"
+                            ? [{ value: "", label: "—" }, ...f.options.map((o) => ({ value: o, label: o }))]
+                            : f.type === "boolean"
+                              ? [
+                                  { value: "", label: "unknown" },
+                                  { value: "true", label: "yes" },
+                                  { value: "false", label: "no" },
+                                ]
+                              : undefined
+                        }
+                      />
+                    ) : (
+                      <span className="text-muted">
+                        {custom[f.key] === undefined || custom[f.key] === null
+                          ? "—"
+                          : String(custom[f.key])}
+                      </span>
+                    )}
+                  </Row>
+                ))}
+              </dl>
+            </Card>
+          ) : null}
+
           <Card title="Drafts" bodyClass="px-4 py-2">
             {drafts?.length ? (
               <ul className="divide-y divide-line/60">
@@ -339,7 +400,7 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
             )}
           </Card>
 
-          {!p.do_not_contact ? (
+          {!p.do_not_contact && canAdmin(viewer) ? (
             <Card title="Stop contacting">
               <form action={markDoNotContact} className="space-y-2">
                 <input type="hidden" name="prospect_id" value={p.id} />

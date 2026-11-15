@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
+import { canWrite, getViewer } from "@/lib/perms";
 
 export async function signInWithPassword(formData: FormData) {
   const supabase = await supabaseServer();
@@ -138,6 +139,52 @@ export async function updateProspectField(
   field: string,
   raw: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const viewer = await getViewer();
+  if (!canWrite(viewer)) return { ok: false, error: "Your account is read-only" };
+
+  // Admin-defined fields live in the prospects.custom jsonb column, so they
+  // need no schema change and cannot collide with a real column.
+  if (field.startsWith("custom.")) {
+    const key = field.slice("custom.".length);
+    const supabase = await supabaseServer();
+
+    const { data: def } = await supabase
+      .from("custom_fields")
+      .select("type, options, active")
+      .eq("key", key)
+      .maybeSingle();
+
+    if (!def || !def.active) return { ok: false, error: "That field no longer exists" };
+
+    const v = raw.trim();
+    let value: string | number | boolean | null = v === "" ? null : v;
+
+    if (def.type === "number" && v !== "") {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return { ok: false, error: "Needs a number" };
+      value = n;
+    }
+    if (def.type === "boolean") value = v === "" ? null : v === "true";
+    if (def.type === "date" && v !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+      return { ok: false, error: "Needs a YYYY-MM-DD date" };
+    }
+    if (def.type === "select" && v !== "" && !(def.options ?? []).includes(v)) {
+      return { ok: false, error: "Not one of the allowed choices" };
+    }
+
+    const { data: row } = await supabase.from("prospects").select("custom").eq("id", id).maybeSingle();
+    const next = { ...((row?.custom as Record<string, unknown>) ?? {}) };
+    if (value === null) delete next[key];
+    else next[key] = value;
+
+    const { error } = await supabase.from("prospects").update({ custom: next }).eq("id", id);
+    if (error) return { ok: false, error: error.message };
+
+    revalidatePath(`/prospects/${id}`);
+    revalidatePath("/prospects");
+    return { ok: true };
+  }
+
   const kind = EDITABLE[field as keyof typeof EDITABLE];
   if (!kind) return { ok: false, error: `${field} is not editable` };
 

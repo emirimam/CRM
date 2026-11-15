@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const links = [
+const baseLinks = [
   { href: "/", label: "Today" },
   { href: "/drafts", label: "Drafts" },
   { href: "/prospects", label: "Prospects" },
@@ -12,8 +12,15 @@ const links = [
   { href: "/guide", label: "Guide" },
 ];
 
-export default function NavLinks({ draftCount = 0 }: { draftCount?: number }) {
+export default function NavLinks({
+  draftCount = 0,
+  isAdmin = false,
+}: {
+  draftCount?: number;
+  isAdmin?: boolean;
+}) {
   const pathname = usePathname();
+  const links = isAdmin ? [...baseLinks, { href: "/admin", label: "Admin" }] : baseLinks;
 
   return (
     <nav className="-mx-1 flex min-w-0 items-center gap-0.5 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

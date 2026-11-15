@@ -224,6 +224,33 @@ export function Tr({
 
 /* ---------------------------------------------------------------- badges -- */
 
+/*
+  Badge driven by the admin's field settings rather than a hard-coded map.
+  StatusBadge and TriggerBadge below remain for the few places that render
+  before settings are loaded.
+*/
+export const toneClass: Record<string, string> = {
+  neutral: "bg-surface-3 text-muted ring-line-strong",
+  accent: "bg-accent-soft/60 text-accent ring-accent/25",
+  ok: "bg-ok-soft/60 text-ok ring-ok/30",
+  warn: "bg-warn-soft/60 text-warn ring-warn/25",
+  danger: "bg-danger-soft/60 text-danger ring-danger/30",
+  info: "bg-info-soft/60 text-info ring-info/25",
+};
+
+export function Badge({ label, tone = "neutral" }: { label: string; tone?: string }) {
+  if (!label) return null;
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-1.5 py-0.5 text-2xs font-semibold ring-1 ring-inset ${
+        toneClass[tone] ?? toneClass.neutral
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
 const triggerLabels: Record<string, string> = {
   copper_sunset: "Copper sunset",
   pbx_eol: "PBX end-of-life",

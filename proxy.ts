@@ -44,6 +44,28 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  /*
+    Someone created with a temporary password gets exactly one screen until
+    they replace it. Enforced here rather than in a layout so it cannot be
+    skipped by typing a URL. The flag lives in app_metadata, which only the
+    secret key can write, so a user cannot clear it themselves.
+  */
+  const mustChange =
+    user?.app_metadata && (user.app_metadata as Record<string, unknown>).must_change_password === true;
+
+  if (mustChange && path !== "/change-password") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/change-password";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  if (!mustChange && path === "/change-password") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
+
   return response;
 }
 
