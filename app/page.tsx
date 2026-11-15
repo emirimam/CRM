@@ -1,9 +1,25 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
-import { Card, Empty, ProspectLink, Stat, StatusBadge, TriggerBadge, fmtDate } from "@/components/ui";
 import AutoRefresh from "@/components/AutoRefresh";
+import {
+  Callout,
+  Card,
+  Empty,
+  PageHeader,
+  Pill,
+  ProspectLink,
+  Stat,
+  StatusBadge,
+  TriggerBadge,
+  daysUntil,
+  fmtDate,
+  fmtRelative,
+} from "@/components/ui";
 
 export const dynamic = "force-dynamic";
+
+/** A run that has said nothing for this long is probably dead, not slow. */
+const STALE_MS = 20 * 60 * 1000;
 
 export default async function Today() {
   const supabase = await supabaseServer();
@@ -20,80 +36,114 @@ export default async function Today() {
   const by = (s: string) => rows.filter((r) => r.status === s).length;
 
   const run = lastRun.data;
-  const running =
-    run?.status === "running" &&
-    Date.now() - new Date(run.updated_at).getTime() < 20 * 60 * 1000;
+  const running = run?.status === "running" && Date.now() - new Date(run.updated_at).getTime() < STALE_MS;
+  const pct = run ? Math.max(3, Math.round((run.steps_done / Math.max(1, run.steps_total)) * 100)) : 0;
 
   return (
-    <div className="space-y-6">
+    <>
       {running ? <AutoRefresh seconds={10} /> : null}
 
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">Today</h1>
-        <p className="mt-0.5 text-sm text-stone-500">
-          {running
-            ? "The agent is working right now."
-            : run
-              ? `Agent last ran ${fmtDate(run.ran_at)} — ${run.prospects_added} prospects, ${run.drafts_written} drafts${run.area_worked ? ` · ${run.area_worked}` : ""}`
-              : "The agent has not run yet."}
-        </p>
-      </div>
+      <PageHeader
+        title="Today"
+        lead={
+          running ? (
+            "The agent is working right now."
+          ) : run ? (
+            <>
+              Agent last ran <span className="font-medium text-ink">{fmtRelative(run.ran_at)}</span> —{" "}
+              {run.prospects_added} prospects, {run.drafts_written} drafts
+              {run.wire_centers_found ? `, ${run.wire_centers_found} wire centers` : ""}
+              {run.area_worked ? (
+                <>
+                  {" · "}
+                  <span className="text-ink">{run.area_worked}</span>
+                </>
+              ) : null}
+            </>
+          ) : (
+            "The agent has not run yet."
+          )
+        }
+        actions={
+          <Link
+            href="/runs"
+            className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-surface-2 hover:text-ink"
+          >
+            Run history →
+          </Link>
+        }
+      />
 
       {running && run ? (
         <Link
           href="/runs"
-          className="block rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 hover:bg-blue-100"
+          className="block rounded-xl border border-accent/35 bg-accent/[0.07] px-4 py-3 transition-colors hover:bg-accent/[0.12]"
         >
-          <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-600" />
-            <span className="font-medium">{run.step ?? "Starting"}</span>
-            <span className="ml-auto tabular-nums text-xs text-blue-700">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-accent" />
+            <span className="font-semibold text-ink">{run.step ?? "Starting"}</span>
+            <span className="ml-auto whitespace-nowrap text-xs font-medium tabular-nums text-accent">
               step {run.steps_done} of {run.steps_total} · details →
             </span>
           </div>
-          <div className="mt-2 h-1 overflow-hidden rounded-full bg-blue-100">
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-accent/15">
             <div
-              className="h-full rounded-full bg-blue-600 transition-all duration-700"
-              style={{ width: `${Math.max(3, Math.round((run.steps_done / Math.max(1, run.steps_total)) * 100))}%` }}
+              className="h-full rounded-full bg-accent transition-all duration-700 ease-snap"
+              style={{ width: `${pct}%` }}
             />
           </div>
         </Link>
       ) : null}
 
-      {lastRun.data?.needs_decision ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <span className="font-medium">Needs your decision: </span>
-          {lastRun.data.needs_decision}
-        </div>
+      {run?.needs_decision ? (
+        <Callout tone="warn" title="Needs your decision">
+          {run.needs_decision}
+        </Callout>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Stat label="Drafts waiting" value={queue.data?.length ?? 0} />
-        <Stat label="Follow-ups due" value={followups.data?.length ?? 0} />
-        <Stat label="Contacted" value={by("contacted")} />
-        <Stat label="Replied" value={by("replied") + by("qualified")} />
-        <Stat label="Won" value={by("won")} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Stat
+          label="Drafts waiting"
+          value={queue.data?.length ?? 0}
+          href="/drafts"
+          tone={queue.data?.length ? "accent" : "neutral"}
+        />
+        <Stat
+          label="Follow-ups due"
+          value={followups.data?.length ?? 0}
+          tone={followups.data?.length ? "warn" : "neutral"}
+        />
+        <Stat label="Contacted" value={by("contacted")} href="/prospects?status=contacted" />
+        <Stat
+          label="Replied"
+          value={by("replied") + by("qualified")}
+          href="/prospects?status=replied"
+          tone={by("replied") + by("qualified") ? "ok" : "neutral"}
+        />
+        <Stat label="Won" value={by("won")} href="/prospects?status=won" tone="ok" />
       </div>
 
       <Card
         title="Drafts waiting for you"
         action={
-          <Link href="/drafts" className="text-xs text-stone-500 hover:text-stone-900">
+          <Link
+            href="/drafts"
+            className="text-xs font-medium text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
+          >
             Review all →
           </Link>
         }
+        bodyClass="px-2 py-1"
       >
         {queue.data?.length ? (
-          <ul className="divide-y divide-stone-100">
+          <ul className="divide-y divide-line/60">
             {queue.data.map((d) => (
-              <li key={d.draft_id} className="flex items-center gap-3 py-2 text-sm">
+              <li key={d.draft_id} className="flex items-center gap-2.5 px-2 py-2.5 text-sm">
                 <ProspectLink id={d.prospect_id} company={d.company} />
                 <TriggerBadge trigger={d.trigger} />
-                <span className="truncate text-stone-500">{d.subject}</span>
-                <span className="ml-auto whitespace-nowrap text-xs text-stone-400">
-                  step {d.sequence_step}
-                  {d.est_seats ? ` · ~${d.est_seats} seats` : ""}
-                </span>
+                <span className="min-w-0 flex-1 truncate text-muted">{d.subject}</span>
+                <Pill>step {d.sequence_step}</Pill>
+                {d.est_seats ? <Pill>~{d.est_seats} seats</Pill> : null}
               </li>
             ))}
           </ul>
@@ -102,15 +152,17 @@ export default async function Today() {
         )}
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card title="Follow-ups due">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card title="Follow-ups due" bodyClass="px-2 py-1">
           {followups.data?.length ? (
-            <ul className="divide-y divide-stone-100">
+            <ul className="divide-y divide-line/60">
               {followups.data.map((p) => (
-                <li key={p.id} className="flex items-center gap-3 py-2 text-sm">
+                <li key={p.id} className="flex items-center gap-2.5 px-2 py-2.5 text-sm">
                   <ProspectLink id={p.id} company={p.company} />
                   <StatusBadge status={p.status} />
-                  <span className="ml-auto text-xs text-stone-400">{fmtDate(p.next_touch_at)}</span>
+                  <span className="ml-auto whitespace-nowrap text-xs text-muted">
+                    {fmtDate(p.next_touch_at)}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -119,24 +171,30 @@ export default async function Today() {
           )}
         </Card>
 
-        <Card title="Renewals within 75 days">
+        <Card title="Renewals within 75 days" bodyClass="px-2 py-1">
           {renewals.data?.length ? (
-            <ul className="divide-y divide-stone-100">
-              {renewals.data.map((p) => (
-                <li key={p.id} className="flex items-center gap-3 py-2 text-sm">
-                  <ProspectLink id={p.id} company={p.company} />
-                  <span className="text-xs text-stone-500">{p.current_provider ?? "provider unknown"}</span>
-                  <span className="ml-auto text-xs font-medium text-stone-600">
-                    {fmtDate(p.renewal_date)}
-                  </span>
-                </li>
-              ))}
+            <ul className="divide-y divide-line/60">
+              {renewals.data.map((p) => {
+                const left = daysUntil(p.renewal_date);
+                return (
+                  <li key={p.id} className="flex items-center gap-2.5 px-2 py-2.5 text-sm">
+                    <ProspectLink id={p.id} company={p.company} />
+                    <span className="min-w-0 truncate text-xs text-muted">
+                      {p.current_provider ?? "provider unknown"}
+                    </span>
+                    <span className="ml-auto whitespace-nowrap text-xs font-medium text-warn">
+                      {fmtDate(p.renewal_date)}
+                      {left !== null && left >= 0 ? ` · ${left}d` : ""}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <Empty>No renewal dates recorded yet — ask for one in every first email.</Empty>
           )}
         </Card>
       </div>
-    </div>
+    </>
   );
 }
