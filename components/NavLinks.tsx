@@ -9,6 +9,7 @@ const links = [
   { href: "/prospects", label: "Prospects" },
   { href: "/wire-centers", label: "Wire centers" },
   { href: "/runs", label: "Agent runs" },
+  { href: "/guide", label: "Guide" },
 ];
 
 export default function NavLinks({ draftCount = 0 }: { draftCount?: number }) {

@@ -96,6 +96,92 @@ export async function updateProspect(formData: FormData) {
   revalidatePath("/prospects");
 }
 
+/*
+  Single-field save, for the click-to-edit fields on a prospect.
+
+  The allowlist is the point: the client sends a field name, so without it
+  anything on the row could be written — including touch_count and
+  do_not_contact, which the database trigger owns. Those stay out
+  deliberately; marking someone do-not-contact goes through
+  markDoNotContact, which also kills their waiting drafts.
+*/
+const EDITABLE = {
+  company: "text",
+  website: "text",
+  city: "text",
+  state: "text",
+  zip: "text",
+  industry: "text",
+  contact_name: "text",
+  contact_role: "text",
+  contact_email: "text",
+  contact_phone: "text",
+  current_provider: "text",
+  current_system: "text",
+  notes: "text",
+  trigger_detail: "text",
+  trigger_source_url: "text",
+  renewal_date: "date",
+  next_touch_at: "date",
+  est_seats: "number",
+  locations: "number",
+  status: "status",
+  has_fax_line: "bool",
+} as const;
+
+const STATUSES = [
+  "new", "researched", "drafted", "contacted", "replied", "qualified", "won", "lost",
+];
+
+export async function updateProspectField(
+  id: string,
+  field: string,
+  raw: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const kind = EDITABLE[field as keyof typeof EDITABLE];
+  if (!kind) return { ok: false, error: `${field} is not editable` };
+
+  const v = raw.trim();
+  let value: string | number | boolean | null = v === "" ? null : v;
+
+  if (kind === "number") {
+    if (v !== "") {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) return { ok: false, error: "Needs a positive number" };
+      value = Math.round(n);
+    }
+  }
+
+  if (kind === "date" && v !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    return { ok: false, error: "Needs a YYYY-MM-DD date" };
+  }
+
+  if (kind === "status") {
+    // Routed through markDoNotContact so the waiting drafts get discarded too.
+    if (v === "dnc") return { ok: false, error: "Use the do-not-contact button" };
+    if (!STATUSES.includes(v)) return { ok: false, error: "Unknown status" };
+  }
+
+  if (kind === "bool") value = v === "" ? null : v === "true";
+
+  if (field === "contact_email" && value && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(value))) {
+    return { ok: false, error: "That is not an email address" };
+  }
+
+  const supabase = await supabaseServer();
+  const { error } = await supabase
+    .from("prospects")
+    .update({ [field]: value })
+    .eq("id", id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(`/prospects/${id}`);
+  revalidatePath("/prospects");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 /** "Not interested" is permanent. No reword, no retry next quarter. */
 export async function markDoNotContact(formData: FormData) {
   const id = String(formData.get("prospect_id"));

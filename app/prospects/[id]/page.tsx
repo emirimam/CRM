@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase/server";
-import { addTouch, markDoNotContact, updateProspect } from "@/app/actions";
+import { addTouch, markDoNotContact } from "@/app/actions";
+import InlineField from "@/components/InlineField";
 import {
   Callout,
   Card,
@@ -11,14 +12,15 @@ import {
   StatusBadge,
   TriggerBadge,
   btn,
-  btnPrimary,
   fmtDate,
   input,
 } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-const statuses = ["new", "researched", "drafted", "contacted", "replied", "qualified", "won", "lost"];
+const statusOptions = [
+  "new", "researched", "drafted", "contacted", "replied", "qualified", "won", "lost",
+].map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }));
 
 const touchKindLabel: Record<string, string> = {
   email_out: "Email out",
@@ -30,9 +32,9 @@ const touchKindLabel: Record<string, string> = {
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5">
+    <div className="flex items-baseline justify-between gap-3 py-2">
       <dt className="shrink-0 text-xs font-medium uppercase tracking-wide text-subtle">{label}</dt>
-      <dd className="min-w-0 truncate text-right text-sm text-ink">{children}</dd>
+      <dd className="min-w-0 text-right text-sm">{children}</dd>
     </div>
   );
 }
@@ -57,8 +59,7 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
     | { carrier: string; name: string; state: string; discontinue_date: string | null; source_url: string }
     | null;
 
-  const field = `w-full ${input}`;
-  const label = "block text-xs font-medium uppercase tracking-wide text-subtle";
+  const editable = !p.do_not_contact;
 
   return (
     <>
@@ -72,9 +73,22 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
 
         <div className="mt-2 flex flex-wrap items-center gap-2.5">
           <h1 className="text-xl font-semibold tracking-tight text-ink">{p.company}</h1>
-          <StatusBadge status={p.status} />
+          {editable ? (
+            <span className="text-sm">
+              <InlineField
+                prospectId={p.id}
+                field="status"
+                value={p.status}
+                kind="select"
+                options={statusOptions}
+                align="left"
+              />
+            </span>
+          ) : (
+            <StatusBadge status={p.status} />
+          )}
           <TriggerBadge trigger={p.trigger} />
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto">
             <Pill tone={p.touch_count >= 4 ? "danger" : "neutral"}>
               {p.touch_count} of 4 touches used
             </Pill>
@@ -98,13 +112,20 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
               {p.website.replace(/^https?:\/\//, "")}
             </a>
           ) : null}
-          {p.industry ? <span className="text-subtle">{p.industry}</span> : null}
         </div>
+
+        {editable ? (
+          <p className="mt-2 text-xs text-subtle">
+            Click any value below to edit it. It saves when you press Enter or click away —
+            there is no Save button.
+          </p>
+        ) : null}
       </div>
 
       {p.do_not_contact ? (
         <Callout tone="danger" title="On the do-not-contact list">
-          {p.dnc_reason ?? "No reason recorded."}
+          {p.dnc_reason ?? "No reason recorded."} Editing is switched off for this record, and any
+          waiting drafts were discarded.
         </Callout>
       ) : null}
 
@@ -112,22 +133,33 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
         <div className="space-y-5 lg:col-span-2">
           <Card title="What we can verifiably say">
             {p.trigger_detail ? (
-              <>
-                <p className="max-w-[72ch] text-sm leading-[1.65] text-ink">{p.trigger_detail}</p>
-                <p className="mt-2">
-                  {p.trigger_source_url ? (
-                    <SourceLink href={p.trigger_source_url}>source</SourceLink>
-                  ) : (
-                    <span className="text-xs font-semibold text-danger">— no source recorded</span>
-                  )}
-                </p>
-              </>
+              <div className="max-w-[72ch] text-sm leading-[1.65]">
+                {editable ? (
+                  <InlineField
+                    prospectId={p.id}
+                    field="trigger_detail"
+                    value={p.trigger_detail}
+                    kind="textarea"
+                    align="left"
+                  />
+                ) : (
+                  <p className="text-ink">{p.trigger_detail}</p>
+                )}
+              </div>
             ) : (
               <Empty>Nothing verified yet. No email should go out until there is.</Empty>
             )}
 
+            <p className="mt-2 text-xs">
+              {p.trigger_source_url ? (
+                <SourceLink href={p.trigger_source_url}>source</SourceLink>
+              ) : (
+                <span className="font-semibold text-danger">no source recorded</span>
+              )}
+            </p>
+
             {wc ? (
-              <div className="mt-3.5 border-t border-line pt-3 text-sm text-muted">
+              <div className="mt-3.5 border-t border-line pt-3 text-sm">
                 <span className="text-xs font-medium uppercase tracking-wide text-subtle">
                   Wire center
                 </span>
@@ -148,74 +180,23 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
             ) : null}
           </Card>
 
-          <Card title="Edit">
-            <form action={updateProspect} className="grid gap-3.5 sm:grid-cols-2">
-              <input type="hidden" name="prospect_id" value={p.id} />
-
-              <label className={label}>
-                Contact name
-                <input name="contact_name" defaultValue={p.contact_name ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Role
-                <input name="contact_role" defaultValue={p.contact_role ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Email
-                <input name="contact_email" type="email" defaultValue={p.contact_email ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Phone
-                <input name="contact_phone" defaultValue={p.contact_phone ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Current provider
-                <input name="current_provider" defaultValue={p.current_provider ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Current system
-                <input name="current_system" defaultValue={p.current_system ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Estimated seats
-                <input name="est_seats" type="number" defaultValue={p.est_seats ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Locations
-                <input name="locations" type="number" defaultValue={p.locations ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Renewal date
-                <input name="renewal_date" type="date" defaultValue={p.renewal_date ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Next touch
-                <input name="next_touch_at" type="date" defaultValue={p.next_touch_at ?? ""} className={`mt-1 ${field}`} />
-              </label>
-              <label className={label}>
-                Status
-                <select name="status" defaultValue={p.status} className={`mt-1 ${field}`}>
-                  {statuses.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={`sm:col-span-2 ${label}`}>
-                Notes
-                <textarea
-                  name="notes"
-                  defaultValue={p.notes ?? ""}
-                  rows={4}
-                  className={`mt-1 leading-relaxed ${field}`}
+          <Card title="Research notes">
+            {editable ? (
+              <div className="text-sm leading-[1.6]">
+                <InlineField
+                  prospectId={p.id}
+                  field="notes"
+                  value={p.notes}
+                  kind="textarea"
+                  placeholder="Nothing recorded — click to add"
+                  align="left"
                 />
-              </label>
-
-              <div className="sm:col-span-2">
-                <button className={btnPrimary}>Save changes</button>
               </div>
-            </form>
+            ) : (
+              <p className="whitespace-pre-wrap text-sm leading-[1.6] text-muted">
+                {p.notes ?? "—"}
+              </p>
+            )}
           </Card>
 
           <Card title="History" bodyClass="px-4 py-3">
@@ -262,59 +243,80 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
         </div>
 
         <div className="space-y-5">
-          <Card title="Key facts">
+          <Card title="Contact">
             <dl className="divide-y divide-line/60">
-              <Row label="Contact">
-                {p.contact_name ? (
-                  <>
-                    {p.contact_name}
-                    {p.contact_role ? (
-                      <span className="text-muted"> · {p.contact_role}</span>
-                    ) : null}
-                  </>
-                ) : (
-                  <span className="text-subtle">—</span>
-                )}
+              <Row label="Name">
+                <InlineField prospectId={p.id} field="contact_name" value={p.contact_name} />
+              </Row>
+              <Row label="Role">
+                <InlineField prospectId={p.id} field="contact_role" value={p.contact_role} />
               </Row>
               <Row label="Email">
-                {p.contact_email ? (
-                  <a
-                    href={`mailto:${p.contact_email}`}
-                    className="text-accent underline decoration-accent/30 underline-offset-2 hover:decoration-accent"
-                  >
-                    {p.contact_email}
-                  </a>
-                ) : (
-                  <span className="font-medium text-danger">none</span>
-                )}
+                <InlineField
+                  prospectId={p.id}
+                  field="contact_email"
+                  value={p.contact_email}
+                  kind="email"
+                  placeholder="none — add one"
+                />
               </Row>
               <Row label="Phone">
-                {p.contact_phone ? (
-                  <a href={`tel:${p.contact_phone}`} className="tabular-nums hover:text-accent">
-                    {p.contact_phone}
-                  </a>
-                ) : (
-                  <span className="text-subtle">—</span>
-                )}
+                <InlineField
+                  prospectId={p.id}
+                  field="contact_phone"
+                  value={p.contact_phone}
+                  kind="tel"
+                />
               </Row>
-              <Row label="Seats">{p.est_seats ?? <span className="text-subtle">—</span>}</Row>
-              <Row label="Locations">{p.locations ?? <span className="text-subtle">—</span>}</Row>
+            </dl>
+          </Card>
+
+          <Card title="Account">
+            <dl className="divide-y divide-line/60">
+              <Row label="Industry">
+                <InlineField prospectId={p.id} field="industry" value={p.industry} />
+              </Row>
+              <Row label="Seats">
+                <InlineField prospectId={p.id} field="est_seats" value={p.est_seats} kind="number" />
+              </Row>
+              <Row label="Locations">
+                <InlineField prospectId={p.id} field="locations" value={p.locations} kind="number" />
+              </Row>
               <Row label="Fax line">
-                {p.has_fax_line === true ? (
-                  <Pill tone="ok">yes</Pill>
-                ) : p.has_fax_line === false ? (
-                  <span className="text-subtle">no</span>
-                ) : (
-                  <span className="text-subtle">unknown</span>
-                )}
+                <InlineField
+                  prospectId={p.id}
+                  field="has_fax_line"
+                  value={p.has_fax_line === null ? "" : String(p.has_fax_line)}
+                  kind="select"
+                  options={[
+                    { value: "", label: "unknown" },
+                    { value: "true", label: "yes" },
+                    { value: "false", label: "no" },
+                  ]}
+                />
               </Row>
-              <Row label="Provider">{p.current_provider ?? <span className="text-subtle">—</span>}</Row>
-              <Row label="System">{p.current_system ?? <span className="text-subtle">—</span>}</Row>
+              <Row label="Provider">
+                <InlineField prospectId={p.id} field="current_provider" value={p.current_provider} />
+              </Row>
+              <Row label="System">
+                <InlineField prospectId={p.id} field="current_system" value={p.current_system} />
+              </Row>
               <Row label="Renewal">
-                {p.renewal_date ? fmtDate(p.renewal_date) : <span className="text-subtle">—</span>}
+                <InlineField
+                  prospectId={p.id}
+                  field="renewal_date"
+                  value={p.renewal_date}
+                  kind="date"
+                  placeholder="ask in the first email"
+                />
               </Row>
               <Row label="Next touch">
-                {p.next_touch_at ? fmtDate(p.next_touch_at) : <span className="text-subtle">—</span>}
+                <InlineField
+                  prospectId={p.id}
+                  field="next_touch_at"
+                  value={p.next_touch_at}
+                  kind="date"
+                />
               </Row>
             </dl>
           </Card>
@@ -337,12 +339,6 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
             )}
           </Card>
 
-          {p.notes ? (
-            <Card title="Research notes">
-              <p className="whitespace-pre-wrap text-sm leading-[1.6] text-muted">{p.notes}</p>
-            </Card>
-          ) : null}
-
           {!p.do_not_contact ? (
             <Card title="Stop contacting">
               <form action={markDoNotContact} className="space-y-2">
@@ -352,7 +348,7 @@ export default async function ProspectDetail({ params }: { params: Promise<{ id:
                   placeholder="Reason"
                   aria-label="Reason"
                   defaultValue="Asked not to be contacted"
-                  className={field}
+                  className={`w-full ${input}`}
                 />
                 <button className="w-full rounded-lg border border-danger/40 px-3 py-1.5 text-sm font-medium text-danger transition-colors hover:bg-danger-soft/60">
                   Add to do-not-contact

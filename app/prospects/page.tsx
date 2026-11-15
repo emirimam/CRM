@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabaseServer } from "@/lib/supabase/server";
+import InlineField from "@/components/InlineField";
 import SearchInput from "@/components/SearchInput";
 import {
   Empty,
@@ -22,6 +23,12 @@ export const dynamic = "force-dynamic";
 const statuses = [
   "all", "new", "researched", "drafted", "contacted", "replied", "qualified", "won", "lost", "dnc",
 ];
+
+/* "dnc" is absent on purpose: it goes through the do-not-contact button on the
+   prospect page, which also discards that prospect's waiting drafts. */
+const statusOptions = [
+  "new", "researched", "drafted", "contacted", "replied", "qualified", "won", "lost",
+].map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }));
 
 /*
   Fields the free-text box looks in. Searching only `company` was the main
@@ -96,7 +103,7 @@ export default async function Prospects({
         lead={
           term
             ? `Searching company, contact, location, provider, trigger detail and notes for “${term}”.`
-            : "Press / to search across company, contact, location, trigger detail and notes."
+            : "Press / to search across company, contact, location, trigger detail and notes. Click a status to change it."
         }
       />
 
@@ -229,7 +236,18 @@ export default async function Prospects({
                     </Td>
 
                     <Td>
-                      <StatusBadge status={p.status} />
+                      {p.do_not_contact ? (
+                        <StatusBadge status={p.status} />
+                      ) : (
+                        <InlineField
+                          prospectId={p.id}
+                          field="status"
+                          value={p.status}
+                          kind="select"
+                          options={statusOptions}
+                          align="left"
+                        />
+                      )}
                     </Td>
                   </Tr>
                 );
